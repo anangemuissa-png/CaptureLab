@@ -1,0 +1,9 @@
+bin/
+obj/
+_traites/
+_exceptions/
+_erreurs/
+_rapports/
+*.user
+.vs/
+.env

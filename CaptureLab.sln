@@ -1,0 +1,60 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.11.12306.390 stable
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{C16EFA55-94D5-48CF-B1EB-4903871BED07}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CaptureLab.Core", "src\CaptureLab.Core\CaptureLab.Core.csproj", "{274205BA-D254-4674-813C-50A99BCDE9DD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CaptureLab.Alfresco", "src\CaptureLab.Alfresco\CaptureLab.Alfresco.csproj", "{C1998D01-2532-400D-81C0-55AC61258FC3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CaptureLab.Cli", "src\CaptureLab.Cli\CaptureLab.Cli.csproj", "{BC746B8C-3F18-4245-BE75-1D981BA42CC8}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{4575C2C5-7052-41B4-8FC6-BC02EA5B2AEA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CaptureLab.SelfTest", "tests\CaptureLab.SelfTest\CaptureLab.SelfTest.csproj", "{D16AD997-CCC3-45AD-9748-8165FCBC0683}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CaptureLab.Desktop", "CaptureLab.Desktop\CaptureLab.Desktop.csproj", "{8B7EDAE4-EC8A-4C68-8094-04C307304514}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{274205BA-D254-4674-813C-50A99BCDE9DD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{274205BA-D254-4674-813C-50A99BCDE9DD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{274205BA-D254-4674-813C-50A99BCDE9DD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{274205BA-D254-4674-813C-50A99BCDE9DD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C1998D01-2532-400D-81C0-55AC61258FC3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C1998D01-2532-400D-81C0-55AC61258FC3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C1998D01-2532-400D-81C0-55AC61258FC3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C1998D01-2532-400D-81C0-55AC61258FC3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BC746B8C-3F18-4245-BE75-1D981BA42CC8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BC746B8C-3F18-4245-BE75-1D981BA42CC8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BC746B8C-3F18-4245-BE75-1D981BA42CC8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BC746B8C-3F18-4245-BE75-1D981BA42CC8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D16AD997-CCC3-45AD-9748-8165FCBC0683}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D16AD997-CCC3-45AD-9748-8165FCBC0683}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D16AD997-CCC3-45AD-9748-8165FCBC0683}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D16AD997-CCC3-45AD-9748-8165FCBC0683}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8B7EDAE4-EC8A-4C68-8094-04C307304514}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8B7EDAE4-EC8A-4C68-8094-04C307304514}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8B7EDAE4-EC8A-4C68-8094-04C307304514}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8B7EDAE4-EC8A-4C68-8094-04C307304514}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{274205BA-D254-4674-813C-50A99BCDE9DD} = {C16EFA55-94D5-48CF-B1EB-4903871BED07}
+		{C1998D01-2532-400D-81C0-55AC61258FC3} = {C16EFA55-94D5-48CF-B1EB-4903871BED07}
+		{BC746B8C-3F18-4245-BE75-1D981BA42CC8} = {C16EFA55-94D5-48CF-B1EB-4903871BED07}
+		{D16AD997-CCC3-45AD-9748-8165FCBC0683} = {4575C2C5-7052-41B4-8FC6-BC02EA5B2AEA}
+		{8B7EDAE4-EC8A-4C68-8094-04C307304514} = {C16EFA55-94D5-48CF-B1EB-4903871BED07}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {DD077114-24F7-44B1-8B82-43A6AD24DE89}
+	EndGlobalSection
+EndGlobal

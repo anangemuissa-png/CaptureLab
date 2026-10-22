@@ -1,0 +1,10 @@
+CONNAISSEMENT / BILL OF LADING
+Connaissement No : MTD-20261009
+
+Expéditeur (Shipper) : Muissa Export SARL, Kinshasa
+Destinataire : Les Entreprises Muissa Inc.
+Port de chargement : Matadi
+Port de déchargement : Montréal
+Navire : MSC AURORA
+Conteneur : MSCU 4821736
+Date : 2026-10-09

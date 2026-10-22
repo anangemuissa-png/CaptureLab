@@ -1,0 +1,186 @@
+{
+  "info": {
+    "name": "Alfresco Lab — REST v1 + CMIS",
+    "description": "Labo de préparation : Alfresco Community en local. Renseigner les variables username et password dans l'onglet Variables (valeur courante seulement, ne pas les partager). Lancer d'abord « 01 Obtenir un ticket ».",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "api", "value": "{{baseUrl}}/alfresco/api/-default-/public" },
+    { "key": "username", "value": "" },
+    { "key": "password", "value": "" },
+    { "key": "ticketB64", "value": "" },
+    { "key": "folderId", "value": "" },
+    { "key": "nodeId", "value": "" }
+  ],
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      { "key": "key", "value": "Authorization", "type": "string" },
+      { "key": "value", "value": "Basic {{ticketB64}}", "type": "string" },
+      { "key": "in", "value": "header", "type": "string" }
+    ]
+  },
+  "item": [
+    {
+      "name": "01 Obtenir un ticket",
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"userId\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}" },
+        "url": "{{api}}/authentication/versions/1/tickets"
+      },
+      "event": [{
+        "listen": "test",
+        "script": { "exec": [
+          "pm.test('201 Created', () => pm.response.to.have.status(201));",
+          "const ticket = pm.response.json().entry.id;",
+          "// Alfresco attend : Authorization: Basic base64(ticket)",
+          "pm.collectionVariables.set('ticketB64', btoa(ticket));"
+        ] }
+      }]
+    },
+    {
+      "name": "02 Découverte (version du dépôt)",
+      "request": { "method": "GET", "url": "{{api}}/discovery" },
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "console.log(pm.response.json().entry.repository.version.display);"
+      ] } }]
+    },
+    {
+      "name": "03 Créer le dossier Capture-TEST/Postman",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"name\": \"Postman\",\n  \"nodeType\": \"cm:folder\",\n  \"relativePath\": \"Capture-TEST\"\n}" },
+        "url": "{{api}}/alfresco/versions/1/nodes/-shared-/children?autoRename=false"
+      },
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('201 (ou 409 si déjà créé)', () => pm.expect([201, 409]).to.include(pm.response.code));",
+        "if (pm.response.code === 201) pm.collectionVariables.set('folderId', pm.response.json().entry.id);"
+      ] } }]
+    },
+    {
+      "name": "04 Lire un dossier par chemin relatif",
+      "request": { "method": "GET", "url": "{{api}}/alfresco/versions/1/nodes/-shared-?relativePath=Capture-TEST/Postman&include=path" },
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('200', () => pm.response.to.have.status(200));",
+        "pm.collectionVariables.set('folderId', pm.response.json().entry.id);"
+      ] } }]
+    },
+    {
+      "name": "05 Déposer un fichier (multipart) avec propriétés",
+      "request": {
+        "method": "POST",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "filedata", "type": "file", "src": [] },
+            { "key": "name", "value": "Facture_FAC-2026147.pdf", "type": "text" },
+            { "key": "nodeType", "value": "cm:content", "type": "text" },
+            { "key": "cm:title", "value": "Facture FAC-2026147", "type": "text" },
+            { "key": "cm:description", "value": "Déposée depuis Postman", "type": "text" },
+            { "key": "autoRename", "value": "false", "type": "text" }
+          ]
+        },
+        "url": "{{api}}/alfresco/versions/1/nodes/{{folderId}}/children",
+        "description": "Choisir un fichier dans le champ filedata. 409 = un fichier du même nom existe déjà."
+      },
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('201 Created', () => pm.response.to.have.status(201));",
+        "pm.collectionVariables.set('nodeId', pm.response.json().entry.id);"
+      ] } }]
+    },
+    {
+      "name": "06 Lire les métadonnées du document",
+      "request": { "method": "GET", "url": "{{api}}/alfresco/versions/1/nodes/{{nodeId}}?include=properties,aspectNames,path" }
+    },
+    {
+      "name": "07 Ajouter l'aspect cap:documentCapture",
+      "request": {
+        "method": "PUT",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"aspectNames\": [\"cm:auditable\", \"cm:titled\", \"cap:documentCapture\"],\n  \"properties\": {\n    \"cap:typeDocument\": \"Facture\",\n    \"cap:numero\": \"FAC-2026147\",\n    \"cap:dateDocument\": \"2026-10-14\",\n    \"cap:client\": \"Entrepôts Rive-Nord Ltée\",\n    \"cap:montant\": 1149.75\n  }\n}" },
+        "url": "{{api}}/alfresco/versions/1/nodes/{{nodeId}}",
+        "description": "Prérequis : modèle « cap » actif dans le Model Manager. Attention : aspectNames remplace TOUTE la liste — reprendre les aspects lus à l'étape 06."
+      }
+    },
+    {
+      "name": "08 Ajouter des étiquettes",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "[{ \"tag\": \"facture\" }, { \"tag\": \"test-integration\" }]" },
+        "url": "{{api}}/alfresco/versions/1/nodes/{{nodeId}}/tags"
+      }
+    },
+    {
+      "name": "09 Nouvelle version du contenu",
+      "request": {
+        "method": "PUT",
+        "body": { "mode": "file", "file": { "src": "" } },
+        "url": "{{api}}/alfresco/versions/1/nodes/{{nodeId}}/content?majorVersion=false&comment=Correction%20OCR"
+      }
+    },
+    {
+      "name": "10 Historique des versions",
+      "request": { "method": "GET", "url": "{{api}}/alfresco/versions/1/nodes/{{nodeId}}/versions" }
+    },
+    {
+      "name": "11 Recherche AFTS",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"query\": {\n    \"query\": \"TYPE:\\\"cm:content\\\" AND TAG:\\\"facture\\\"\",\n    \"language\": \"afts\"\n  },\n  \"include\": [\"properties\", \"path\"],\n  \"paging\": { \"maxItems\": 25, \"skipCount\": 0 }\n}" },
+        "url": "{{api}}/search/versions/1/search",
+        "description": "Passe par l'index : attendre quelques secondes après un dépôt."
+      }
+    },
+    {
+      "name": "12 Requête CMIS (Browser binding)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{api}}/cmis/versions/1.1/browser?cmisselector=query&succinct=true&q=SELECT cmis:objectId, cmis:name, cmis:creationDate FROM cmis:document WHERE cmis:name LIKE 'Facture%'",
+          "host": ["{{api}}"],
+          "path": ["cmis", "versions", "1.1", "browser"],
+          "query": [
+            { "key": "cmisselector", "value": "query" },
+            { "key": "succinct", "value": "true" },
+            { "key": "q", "value": "SELECT cmis:objectId, cmis:name, cmis:creationDate FROM cmis:document WHERE cmis:name LIKE 'Facture%'" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "13 CMIS : jointure sur l'aspect personnalisé",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{api}}/cmis/versions/1.1/browser?cmisselector=query&succinct=true&q=SELECT d.cmis:name, c.cap:numero, c.cap:montant FROM cmis:document d JOIN cap:documentCapture c ON d.cmis:objectId = c.cmis:objectId WHERE c.cap:montant > 1000",
+          "host": ["{{api}}"],
+          "path": ["cmis", "versions", "1.1", "browser"],
+          "query": [
+            { "key": "cmisselector", "value": "query" },
+            { "key": "succinct", "value": "true" },
+            { "key": "q", "value": "SELECT d.cmis:name, c.cap:numero, c.cap:montant FROM cmis:document d JOIN cap:documentCapture c ON d.cmis:objectId = c.cmis:objectId WHERE c.cap:montant > 1000" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "14 Télécharger le contenu",
+      "request": { "method": "GET", "url": "{{api}}/alfresco/versions/1/nodes/{{nodeId}}/content?attachment=true" }
+    },
+    {
+      "name": "15 Supprimer (corbeille)",
+      "request": { "method": "DELETE", "url": "{{api}}/alfresco/versions/1/nodes/{{nodeId}}" }
+    },
+    {
+      "name": "16 Révoquer le ticket",
+      "request": { "method": "DELETE", "url": "{{api}}/authentication/versions/1/tickets/-me-" }
+    }
+  ]
+}

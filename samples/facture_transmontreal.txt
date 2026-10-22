@@ -1,0 +1,16 @@
+TRANSPORTS MILLO INC.
+1250, boulevard Industriel, Laval (Québec)
+
+FACTURE No : FAC-2026147
+Date : 14/10/2026
+Client : Entrepôts Rive-Nord Ltée
+
+Description                         Quantité   Prix
+Transport conteneur Montréal-Laval      1     850,00
+Frais de manutention                    2      75,00
+
+Sous-total                                    1 000,00
+TPS (5 %)                                        50,00
+TVQ (9,975 %)                                    99,75
+Total à payer : 1 149,75 $
+Échéance : 30 jours

@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\src\CaptureLab.Alfresco\CaptureLab.Alfresco.csproj" />
+    <ProjectReference Include="..\src\CaptureLab.Core\CaptureLab.Core.csproj" />
+  </ItemGroup>
+
+</Project>
