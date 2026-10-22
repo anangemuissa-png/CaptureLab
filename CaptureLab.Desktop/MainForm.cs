@@ -4,22 +4,31 @@ namespace CaptureLab.Desktop;
 
 public partial class MainForm : Form
 {
+    // Client Alfresco partagé par toute la fenêtre (créé au moment de la connexion)
+    private AlfrescoClient? _client;
+
     // Zone "Validation" créée par le code (sous la grille des champs)
     private Label lblValidation = null!;
     private ListBox lstValidation = null!;
 
-    // Client Alfresco partagé par toute la fenêtre (créé au moment de la connexion)
-    private AlfrescoClient? _client;
+    // Formats lus pour l'instant (le PDF viendra dans une étape dédiée)
+    private static readonly string[] ExtensionsImages = [".tif", ".tiff", ".png", ".jpg", ".jpeg"];
 
     public MainForm()
     {
-        InitializeComponent();
-        CreerZoneValidation();
+        InitializeComponent();          // crée les contrôles dessinés dans le concepteur
+        CreerZoneValidation();          // étape 8B : titre "Validation" + liste
+        OrganiserDisposition();         // étape 9 : boutons, journal, barre d'état au bon endroit
+
         cmbEnvironnement.SelectedIndex = 0;   // "Development" par défaut
         AfficherEtat(false, "Non connecté");
-        // 1. Dans le constructeur, après AfficherEtat(false, "Non connecté");
-        ChargerDocuments();
+        ChargerDocuments();                   // lit C:\CaptureIn
+
+        tsslEnvironnement.Text = "Environnement : " + cmbEnvironnement.Text;
+        MettreAJourBoutons();
     }
+
+    #region Connexion Alfresco (étape 6)
 
     private async void btnTester_Click(object sender, EventArgs e)
     {
@@ -46,10 +55,13 @@ public partial class MainForm : Form
             var racine = await _client.GetNodeAsync("-root-");   // GET /nodes/-root-
 
             AfficherEtat(true, $"Connecté ({racine.Name})");
+            tsslEnvironnement.Text = "Environnement : " + cmbEnvironnement.Text;
+            Journaliser($"Connexion réussie ({racine.Name}) – {txtServeur.Text}");
         }
         catch (Exception ex)
         {
             AfficherEtat(false, "Non connecté");
+            Journaliser("Échec de connexion : " + ex.Message);
             MessageBox.Show(this, ex.Message, "Connexion Alfresco",
                             MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
@@ -64,9 +76,76 @@ public partial class MainForm : Form
         lblEtat.Text = "● " + texte;
         lblEtat.ForeColor = connecte ? Color.ForestGreen : Color.Firebrick;
     }
+
+    #endregion
+
+    #region Dossier d'entrée, liste et aperçu (étapes 7 et 8A)
+
+    // Bouton "Parcourir…"
+    private void btnParcourir_Click(object sender, EventArgs e)
+    {
+        using var dialogue = new FolderBrowserDialog
+        {
+            Description = "Choisir le dossier des documents numérisés",
+            UseDescriptionForTitle = true,
+            InitialDirectory = txtDossier.Text,
+            SelectedPath = txtDossier.Text
+        };
+
+        if (dialogue.ShowDialog(this) == DialogResult.OK)
+        {
+            txtDossier.Text = dialogue.SelectedPath;
+            ChargerDocuments();
+        }
+    }
+
+    private void ChargerDocuments()
+    {
+        lvDocuments.Items.Clear();
+        picApercu.Image?.Dispose();
+        picApercu.Image = null;
+
+        if (Directory.Exists(txtDossier.Text))
+        {
+            var fichiers = Directory.EnumerateFiles(txtDossier.Text)
+                .Where(f => ExtensionsImages.Contains(Path.GetExtension(f).ToLowerInvariant()))
+                .OrderBy(f => f);
+
+            foreach (var chemin in fichiers)
+            {
+                var ligne = new ListViewItem(Path.GetFileName(chemin)) { Tag = chemin };
+                ligne.SubItems.Add("En attente");
+                lvDocuments.Items.Add(ligne);
+            }
+        }
+
+        tsslDocuments.Text = $"{lvDocuments.Items.Count} document(s)";
+        MettreAJourBoutons();
+    }
+
+    private void lvDocuments_SelectedIndexChanged(object sender, EventArgs e)
+    {
+        MettreAJourBoutons();
+
+        if (lvDocuments.SelectedItems.Count == 0)
+            return;
+
+        var chemin = (string)lvDocuments.SelectedItems[0].Tag!;
+
+        picApercu.Image?.Dispose();
+        // On copie l'image en mémoire pour ne pas verrouiller le fichier :
+        // plus tard, CaptureLab devra pouvoir le déplacer vers _traites ou _exceptions.
+        using var flux = File.OpenRead(chemin);
+        using var image = Image.FromStream(flux);
+        picApercu.Image = new Bitmap(image);
+    }
+
+    #endregion
+
+    #region Disposition de la fenêtre (étapes 8B et 9)
+
     private void CreerZoneValidation()
     {
-        // Le cadre qui contient la grille des champs (grpChamps)
         // Le cadre qui contient la grille des champs.
         // Si la grille est posée directement dans une cellule de tlpCentre,
         // on crée le cadre "Champs extraits" dans cette cellule et on y déplace la grille.
@@ -114,100 +193,76 @@ public partial class MainForm : Form
         tlpChamps.SendToBack();
         lstValidation.BringToFront();
     }
-    private void cmbEnvironnement_SelectedIndexChanged(object sender, EventArgs e)
+
+    private void OrganiserDisposition()
     {
-
-    }
-
-    private void panel1_Paint(object sender, PaintEventArgs e)
-    {
-
-    }
-
-    private void button1_Click(object sender, EventArgs e)
-    {
-        using var dialogue = new FolderBrowserDialog
+        // 1. Ces trois zones doivent être posées directement sur la fenêtre
+        foreach (Control zone in new Control[] { ssEtat, grpJournal, flpActions })
         {
-            Description = "Choisir le dossier des documents numérisés",
-            UseDescriptionForTitle = true,
-            InitialDirectory = txtDossier.Text,   // ouvre la fenêtre DANS ce dossier
-            SelectedPath = txtDossier.Text
-        };
-
-        if (dialogue.ShowDialog(this) == DialogResult.OK)
-            txtDossier.Text = dialogue.SelectedPath;
-    }
-
-    private void btnParcourir_Click(object sender, EventArgs e)
-    {
-        using var dialogue = new FolderBrowserDialog
-        {
-            Description = "Choisir le dossier des documents numérisés",
-            UseDescriptionForTitle = true,
-            InitialDirectory = txtDossier.Text,   // ouvre la fenêtre DANS ce dossier
-            SelectedPath = txtDossier.Text
-        };
-
-        if (dialogue.ShowDialog(this) == DialogResult.OK)
-            txtDossier.Text = dialogue.SelectedPath;
-        ChargerDocuments();
-    }
-
-    private void tlpCentre_Paint(object sender, PaintEventArgs e)
-    {
-
-    }
-    // Formats lus pour l'instant (le PDF viendra dans une étape dédiée)
-    private static readonly string[] ExtensionsImages = [".tif", ".tiff", ".png", ".jpg", ".jpeg"];
-
-    private void ChargerDocuments()
-    {
-        lvDocuments.Items.Clear();
-        picApercu.Image?.Dispose();
-        picApercu.Image = null;
-
-        if (!Directory.Exists(txtDossier.Text))
-            return;
-
-        var fichiers = Directory.EnumerateFiles(txtDossier.Text)
-            .Where(f => ExtensionsImages.Contains(Path.GetExtension(f).ToLowerInvariant()))
-            .OrderBy(f => f);
-
-        foreach (var chemin in fichiers)
-        {
-            var ligne = new ListViewItem(Path.GetFileName(chemin)) { Tag = chemin };
-            ligne.SubItems.Add("En attente");
-            lvDocuments.Items.Add(ligne);
+            if (zone.Parent != this)
+            {
+                zone.Parent?.Controls.Remove(zone);
+                Controls.Add(zone);
+            }
         }
+
+        flpActions.Dock = DockStyle.Bottom;
+        flpActions.Height = 44;
+        grpJournal.Dock = DockStyle.Bottom;
+        grpJournal.Height = 150;
+
+        // 2. Ordre d'empilement, du fond vers l'avant :
+        //    en haut : connexion, puis dossier d'entrée
+        //    en bas  : barre d'état, puis journal, puis boutons
+        //    au centre : la grille, qui remplit l'espace restant
+        var panneauDossier = txtDossier.Parent!;
+
+        grpConnexion.BringToFront();
+        panneauDossier.BringToFront();
+        ssEtat.BringToFront();
+        grpJournal.BringToFront();
+        flpActions.BringToFront();
+        tlpCentre.BringToFront();
     }
 
-    private void lvDocuments_SelectedIndexChanged(object sender, EventArgs e)
+    #endregion
+
+    #region Journal et boutons d'action (étape 9)
+
+    private void Journaliser(string message)
     {
-        if (lvDocuments.SelectedItems.Count == 0)
-            return;
-
-        var chemin = (string)lvDocuments.SelectedItems[0].Tag!;
-
-        picApercu.Image?.Dispose();
-        // On copie l'image en mémoire pour ne pas verrouiller le fichier :
-        // plus tard, CaptureLab devra pouvoir le déplacer vers _traites ou _exceptions.
-        using var flux = File.OpenRead(chemin);
-        using var image = Image.FromStream(flux);
-        picApercu.Image = new Bitmap(image);
+        txtJournal.AppendText($"{DateTime.Now:HH:mm:ss}  {message}{Environment.NewLine}");
     }
 
-    private void label3_Click(object sender, EventArgs e)
+    private void MettreAJourBoutons()
     {
-
+        bool documentChoisi = lvDocuments.SelectedItems.Count > 0;
+        btnTraiter.Enabled = documentChoisi;
+        btnException.Enabled = documentChoisi;
+        btnValider.Enabled = false;   // activé seulement après un traitement valide (étape 10)
     }
 
-    private void label7_Click(object sender, EventArgs e)
+    private void btnTraiter_Click(object sender, EventArgs e)
     {
-
+        Journaliser("Traiter : sera branché sur l'OCR à l'étape 10.");
     }
 
-    private void label9_Click(object sender, EventArgs e)
+    private void btnValider_Click(object sender, EventArgs e)
     {
-
+        Journaliser("Valider et déposer : sera branché à l'étape 11.");
     }
+
+    private void btnException_Click(object sender, EventArgs e)
+    {
+        Journaliser("Envoyer en exception : sera branché à l'étape 11.");
+    }
+
+    private void btnShare_Click(object sender, EventArgs e)
+    {
+        var adresse = txtServeur.Text.TrimEnd('/') + "/share";
+        System.Diagnostics.Process.Start(
+            new System.Diagnostics.ProcessStartInfo(adresse) { UseShellExecute = true });
+    }
+
+    #endregion
 }
