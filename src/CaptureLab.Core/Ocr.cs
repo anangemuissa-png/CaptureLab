@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 namespace CaptureLab.Core;
 
@@ -39,7 +40,9 @@ public sealed class TesseractCliOcrEngine : IOcrEngine
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
-            CreateNoWindow = true
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,   // Tesseract écrit en UTF-8
+            StandardErrorEncoding = Encoding.UTF8
         };
         // "stdout" = Tesseract écrit le texte sur la sortie standard au lieu d'un fichier
         psi.ArgumentList.Add(imagePath);

@@ -48,11 +48,11 @@
             label5 = new Label();
             label3 = new Label();
             label1 = new Label();
-            txtType = new Label();
+            lblConfiance = new Label();
             txtNumero = new TextBox();
             texttype = new TextBox();
             txtDate = new TextBox();
-            ProgressBar = new ProgressBar();
+            barConfiance = new ProgressBar();
             ssEtat = new StatusStrip();
             tsslDocuments = new ToolStripStatusLabel();
             tsslEnvironnement = new ToolStripStatusLabel();
@@ -206,11 +206,11 @@
             tlpChamps.Controls.Add(label5, 0, 2);
             tlpChamps.Controls.Add(label3, 0, 1);
             tlpChamps.Controls.Add(label1, 0, 0);
-            tlpChamps.Controls.Add(txtType, 0, 5);
+            tlpChamps.Controls.Add(lblConfiance, 0, 5);
             tlpChamps.Controls.Add(txtNumero, 1, 1);
             tlpChamps.Controls.Add(texttype, 1, 0);
             tlpChamps.Controls.Add(txtDate, 1, 2);
-            tlpChamps.Controls.Add(ProgressBar, 1, 5);
+            tlpChamps.Controls.Add(barConfiance, 1, 5);
             tlpChamps.Location = new Point(837, 11);
             tlpChamps.Name = "tlpChamps";
             tlpChamps.RowCount = 6;
@@ -285,15 +285,15 @@
             label1.TabIndex = 10;
             label1.Text = "Type :";
             // 
-            // txtType
+            // lblConfiance
             // 
-            txtType.AutoSize = true;
-            txtType.Location = new Point(3, 173);
-            txtType.Margin = new Padding(3, 8, 3, 3);
-            txtType.Name = "txtType";
-            txtType.Size = new Size(82, 20);
-            txtType.TabIndex = 9;
-            txtType.Text = "Confiance :";
+            lblConfiance.AutoSize = true;
+            lblConfiance.Location = new Point(3, 173);
+            lblConfiance.Margin = new Padding(3, 8, 3, 3);
+            lblConfiance.Name = "lblConfiance";
+            lblConfiance.Size = new Size(82, 20);
+            lblConfiance.TabIndex = 9;
+            lblConfiance.Text = "Confiance :";
             // 
             // txtNumero
             // 
@@ -317,12 +317,12 @@
             txtDate.Size = new Size(125, 27);
             txtDate.TabIndex = 21;
             // 
-            // ProgressBar
+            // barConfiance
             // 
-            ProgressBar.Location = new Point(93, 168);
-            ProgressBar.Name = "ProgressBar";
-            ProgressBar.Size = new Size(125, 18);
-            ProgressBar.TabIndex = 24;
+            barConfiance.Location = new Point(93, 168);
+            barConfiance.Name = "barConfiance";
+            barConfiance.Size = new Size(125, 18);
+            barConfiance.TabIndex = 24;
             // 
             // ssEtat
             // 
@@ -607,14 +607,14 @@
         private Label label5;
         private Label label3;
         private Label label1;
-        private Label txtType;
+        private Label lblConfiance;
         private Label label9;
         private TextBox txtMontant;
         private TextBox txtClient;
         private TextBox txtNumero;
         private TextBox texttype;
         private TextBox txtDate;
-        private ProgressBar ProgressBar;
+        private ProgressBar barConfiance;
         private StatusStrip ssEtat;
         private ToolStripStatusLabel tsslDocuments;
         private ToolStripStatusLabel tsslEnvironnement;

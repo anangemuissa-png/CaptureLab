@@ -1,4 +1,6 @@
 using CaptureLab.Alfresco;
+using CaptureLab.Core;
+
 
 namespace CaptureLab.Desktop;
 
@@ -13,6 +15,19 @@ public partial class MainForm : Form
 
     // Formats lus pour l'instant (le PDF viendra dans une étape dédiée)
     private static readonly string[] ExtensionsImages = [".tif", ".tiff", ".png", ".jpg", ".jpeg"];
+    // Chemin de Tesseract installé à l'étape 10A
+    private const string CheminTesseract = @"C:\Program Files\Tesseract-OCR\tesseract.exe";
+
+    // Chaîne de capture SANS dépôt : le dépôt se fera au clic sur "Valider et déposer"
+    private readonly CapturePipeline _pipeline = new(
+        new CompositeOcrEngine(new TesseractCliOcrEngine(CheminTesseract, "fra+eng")),
+        new KeywordClassifier(),
+        new RegexExtractor(),
+        new BusinessValidator(),
+        exporter: null);
+
+    // Dernier document traité (servira au dépôt à l'étape 11)
+    private CaptureDocument? _documentCourant;
 
     public MainForm()
     {
@@ -125,7 +140,9 @@ public partial class MainForm : Form
 
     private void lvDocuments_SelectedIndexChanged(object sender, EventArgs e)
     {
+        ViderChamps();
         MettreAJourBoutons();
+
 
         if (lvDocuments.SelectedItems.Count == 0)
             return;
@@ -239,14 +256,86 @@ public partial class MainForm : Form
         bool documentChoisi = lvDocuments.SelectedItems.Count > 0;
         btnTraiter.Enabled = documentChoisi;
         btnException.Enabled = documentChoisi;
-        btnValider.Enabled = false;   // activé seulement après un traitement valide (étape 10)
+
+        // "Valider et déposer" seulement si le document sélectionné vient d'être traité ET est valide
+        btnValider.Enabled = documentChoisi
+            && _documentCourant?.Status == CaptureStatus.Valide
+            && _documentCourant.SourcePath == (string)lvDocuments.SelectedItems[0].Tag!;
     }
 
-    private void btnTraiter_Click(object sender, EventArgs e)
+    private async void btnTraiter_Click(object sender, EventArgs e)
     {
-        Journaliser("Traiter : sera branché sur l'OCR à l'étape 10.");
+        if (lvDocuments.SelectedItems.Count == 0)
+            return;
+
+        var ligne = lvDocuments.SelectedItems[0];
+        var chemin = (string)ligne.Tag!;
+
+        Cursor = Cursors.WaitCursor;
+        btnTraiter.Enabled = false;
+        ViderChamps();
+
+        try
+        {
+            var doc = await _pipeline.ProcessAsync(chemin);   // OCR → classification → extraction → validation
+            _documentCourant = doc;
+
+            // Copie la trace du traitement dans le journal (sans l'heure, déjà ajoutée par Journaliser)
+            foreach (var trace in doc.Log)
+                Journaliser($"{doc.FileName} : {trace[9..]}");
+
+            AfficherResultat(doc);
+
+            ligne.SubItems[1].Text = doc.Status switch
+            {
+                CaptureStatus.Valide => "Valide",
+                CaptureStatus.EnException => "Exception",
+                CaptureStatus.Erreur => "Erreur",
+                _ => doc.Status.ToString()
+            };
+        }
+        finally
+        {
+            Cursor = Cursors.Default;
+            MettreAJourBoutons();
+        }
+    }
+    private void AfficherResultat(CaptureDocument doc)
+    {
+        lblConfiance.Text = doc.Classification?.Type.ToString() ?? "";
+        txtNumero.Text = doc["numero"] ?? "";
+        txtDate.Text = doc["date"] ?? "";
+        txtClient.Text = doc["client"] ?? "";
+        txtMontant.Text = doc["montant"] ?? "";
+        barConfiance.Value = (int)Math.Round((doc.Classification?.Confidence ?? 0) * 100);
+
+        // Les champs signalés par la validation passent en rouge pâle
+        var erreurs = doc.Validation?.Errors ?? [];
+        foreach (var (zone, champ) in new[] { (txtNumero, "numero"), (txtDate, "date"), (txtMontant, "montant") })
+            zone.BackColor = erreurs.Any(err => err.Contains(champ)) ? Color.MistyRose : SystemColors.Window;
+
+        lstValidation.Items.Clear();
+        if (doc.Status == CaptureStatus.Erreur)
+            lstValidation.Items.Add("✖ Erreur de traitement : voir le journal");
+        else if (doc.Validation is { IsValid: true })
+            lstValidation.Items.Add("✔ Toutes les règles sont respectées");
+        else
+            foreach (var err in erreurs)
+                lstValidation.Items.Add("✖ " + err);
     }
 
+    private void ViderChamps()
+    {
+        foreach (Control zone in new Control[] { lblConfiance, txtNumero, txtDate, txtClient, txtMontant })
+        {
+            zone.Text = "";
+            zone.BackColor = zone is TextBoxBase { ReadOnly: true }
+                ? SystemColors.Control
+                : SystemColors.Window;
+        }
+        barConfiance.Value = 0;
+        lstValidation.Items.Clear();
+    }
     private void btnValider_Click(object sender, EventArgs e)
     {
         Journaliser("Valider et déposer : sera branché à l'étape 11.");
