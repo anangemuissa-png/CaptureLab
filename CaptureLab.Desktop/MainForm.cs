@@ -308,7 +308,7 @@ public partial class MainForm : Form
             _documentCourant = doc;
 
             // Copie la trace du traitement dans le journal (sans l'heure, déjà ajoutée par Journaliser)
-            foreach (var trace in doc.Log)
+            foreach (var trace in doc.Log.Where(t => !t.Contains("Mode hors ligne")))
                 Journaliser($"{doc.FileName} : {trace[9..]}");
 
             AfficherResultat(doc);
