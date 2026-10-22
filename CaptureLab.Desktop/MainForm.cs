@@ -9,6 +9,9 @@ public partial class MainForm : Form
     // Client Alfresco partagé par toute la fenêtre (créé au moment de la connexion)
     private AlfrescoClient? _client;
 
+    // Options de connexion conservées après "Tester la connexion" (servent au dépôt)
+    private AlfrescoOptions? _options;
+
     // Zone "Validation" créée par le code (sous la grille des champs)
     private Label lblValidation = null!;
     private ListBox lstValidation = null!;
@@ -68,6 +71,13 @@ public partial class MainForm : Form
             _client = new AlfrescoClient(options);
             await _client.LoginAsync();                          // POST /tickets
             var racine = await _client.GetNodeAsync("-root-");   // GET /nodes/-root-
+            
+            // Dossier parent du dépôt : "Fichiers partagés" si l'alias existe sur ce serveur, sinon l'Espace racine
+            options.ParentNode = await ResoudreDossierParentAsync();
+            _options = options;
+            Journaliser($"Dossier de dépôt : {options.ParentNode}/{options.RootFolder}");
+
+
 
             AfficherEtat(true, $"Connecté ({racine.Name})");
             tsslEnvironnement.Text = "Environnement : " + cmbEnvironnement.Text;
@@ -91,6 +101,23 @@ public partial class MainForm : Form
         lblEtat.Text = "● " + texte;
         lblEtat.ForeColor = connecte ? Color.ForestGreen : Color.Firebrick;
     }
+
+    // L'alias "-shared-" n'existe peut-être pas dans Alfresco 5.2 : on le teste, sinon on prend la racine
+    private async Task<string> ResoudreDossierParentAsync()
+    {
+        try
+        {
+            await _client!.GetNodeAsync("-shared-");
+            return "-shared-";
+        }
+        catch (AlfrescoException)
+        {
+            return "-root-";
+        }
+    }
+
+
+
 
     #endregion
 
@@ -336,14 +363,97 @@ public partial class MainForm : Form
         barConfiance.Value = 0;
         lstValidation.Items.Clear();
     }
-    private void btnValider_Click(object sender, EventArgs e)
+    private async void btnValider_Click(object sender, EventArgs e)
     {
-        Journaliser("Valider et déposer : sera branché à l'étape 11.");
-    }
+        if (_documentCourant is null || lvDocuments.SelectedItems.Count == 0)
+            return;
 
+        if (_client is null || _options is null)
+        {
+            MessageBox.Show(this, "Connectez-vous d'abord à Alfresco avec « Tester la connexion ».",
+                            "Dépôt Alfresco", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        var doc = _documentCourant;
+        var ligne = lvDocuments.SelectedItems[0];
+
+        // 1. Reprendre les valeurs affichées : l'opérateur a pu corriger une erreur d'OCR
+        doc.Fields["numero"] = new ExtractedField("numero", Nettoyer(txtNumero.Text), 1.0);
+        doc.Fields["date"] = new ExtractedField("date", Nettoyer(txtDate.Text), 1.0);
+        doc.Fields["client"] = new ExtractedField("client", Nettoyer(txtClient.Text), 1.0);
+        doc.Fields["montant"] = new ExtractedField("montant", Nettoyer(txtMontant.Text), 1.0);
+
+        // 2. Revalider après correction
+        doc.Validation = new BusinessValidator().Validate(doc);
+        if (!doc.Validation.IsValid)
+        {
+            AfficherResultat(doc);
+            Journaliser($"{doc.FileName} : dépôt refusé, corriger les champs signalés.");
+            return;
+        }
+
+        Cursor = Cursors.WaitCursor;
+        btnValider.Enabled = false;
+
+        try
+        {
+            // 3. Dépôt dans Alfresco : dossiers, titre, description, étiquettes
+            var exporteur = new AlfrescoExporter(_client, _options);
+            doc.AlfrescoNodeId = await exporteur.ExportAsync(doc);
+            doc.Status = CaptureStatus.Depose;
+
+            var doublon = doc.Log.LastOrDefault(l => l.Contains("Doublon"));
+            Journaliser(doublon is null
+                ? $"{doc.FileName} : déposé dans Alfresco — nœud {doc.AlfrescoNodeId}"
+                : $"{doc.FileName} : {doublon[9..]}");
+
+            // 4. Le fichier source part dans _traites
+            ligne.Tag = DeplacerFichier(doc.SourcePath, "_traites");
+            ligne.SubItems[1].Text = "Déposé";
+            _documentCourant = null;
+
+            var date = doc["date"]!;
+            MessageBox.Show(this,
+                $"La facture a été déposée dans Alfresco.\n\n" +
+                $"Dossier : {_options.RootFolder}/{doc.Classification!.Type}/{date[..4]}/{date.Substring(5, 2)}\n" +
+                $"Titre : {doc.Classification.Type} {doc["numero"]}\n" +
+                $"Nœud : {doc.AlfrescoNodeId}",
+                "Dépôt réussi", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            Journaliser($"{doc.FileName} : échec du dépôt — {ex.Message}");
+            MessageBox.Show(this, ex.Message, "Échec du dépôt", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            Cursor = Cursors.Default;
+            MettreAJourBoutons();
+        }
+    }
     private void btnException_Click(object sender, EventArgs e)
     {
-        Journaliser("Envoyer en exception : sera branché à l'étape 11.");
+        if (lvDocuments.SelectedItems.Count == 0)
+            return;
+
+        var ligne = lvDocuments.SelectedItems[0];
+        var chemin = (string)ligne.Tag!;
+
+        // Raisons : celles de la validation si le document vient d'être traité, sinon décision de l'opérateur
+        var raisons = _documentCourant?.SourcePath == chemin && _documentCourant.Validation is { IsValid: false } v
+            ? v.Errors
+            : (IReadOnlyList<string>)["Envoyé en exception par l'opérateur."];
+
+        var nouveauChemin = DeplacerFichier(chemin, "_exceptions");
+        File.WriteAllLines(nouveauChemin + ".raisons.txt",
+            [$"Document : {Path.GetFileName(chemin)}", $"Date : {DateTime.Now:yyyy-MM-dd HH:mm}", "", .. raisons]);
+
+        ligne.Tag = nouveauChemin;
+        ligne.SubItems[1].Text = "Exception";
+        _documentCourant = null;
+        Journaliser($"{Path.GetFileName(chemin)} : envoyé en exception — {string.Join(" | ", raisons)}");
+        MettreAJourBoutons();
     }
 
     private void btnShare_Click(object sender, EventArgs e)
@@ -352,6 +462,21 @@ public partial class MainForm : Form
         System.Diagnostics.Process.Start(
             new System.Diagnostics.ProcessStartInfo(adresse) { UseShellExecute = true });
     }
+    private static string? Nettoyer(string texte) =>
+    string.IsNullOrWhiteSpace(texte) ? null : texte.Trim();
 
+    // Déplace un fichier dans un sous-dossier du dossier d'entrée (_traites, _exceptions)
+    private string DeplacerFichier(string chemin, string sousDossier)
+    {
+        var dossier = Directory.CreateDirectory(Path.Combine(txtDossier.Text, sousDossier)).FullName;
+        var destination = Path.Combine(dossier, Path.GetFileName(chemin));
+
+        if (File.Exists(destination))   // ne jamais écraser un fichier déjà traité
+            destination = Path.Combine(dossier,
+                $"{Path.GetFileNameWithoutExtension(chemin)}_{DateTime.Now:HHmmss}{Path.GetExtension(chemin)}");
+
+        File.Move(chemin, destination);
+        return destination;
+    }
     #endregion
 }
