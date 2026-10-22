@@ -1,249 +1,179 @@
-# Labo Alfresco + C# — préparation au test technique
+# CaptureLab
 
-Refaire en **C# seul** la chaîne de capture de 2023 (projet Millodeploie) : numérisation → OCR → classification → extraction → validation → dépôt dans **Alfresco Community** par **API REST** et requêtes **CMIS**, avec séparation **test / production**.
+Chaîne de capture documentaire en C# : numérisation, OCR, classification, extraction, validation, puis dépôt dans une GED **Alfresco Community** par son API REST et CMIS.
 
-> Rien dans ce dépôt ne contient de mot de passe ni d'adresse de serveur réelle. Les identifiants passent par des variables d'environnement.
+L'application principale est une application **Windows (WinForms, .NET)** de type station de validation : l'opérateur voit le document numérisé, contrôle les champs extraits, les corrige au besoin, puis le dépose dans Alfresco ou l'envoie en exception.
+
+> Toutes les factures et données d'exemple de ce dépôt sont **fictives**.
 
 ---
 
-## 1. Ce qui change par rapport à 2023
+## Fonctionnalités
 
-| Étape | 2023 (Millodeploie) | 2026 (ce labo) | Ce que ça montre au test |
-|---|---|---|---|
-| Numérisation / entrée | Poste WinDev + scanner | Dossier surveillé (`watch`) ou lot (`run`) | Notion de *hot folder* / lot de capture |
-| OCR | WinDev | Tesseract derrière l'interface `IOcrEngine` | Moteur OCR remplaçable (Tesseract, Azure, Tungsten…) |
-| Classification | Manuelle / règles | `KeywordClassifier` : score par classe + seuil | Confiance et seuil, comme un outil IDP |
-| Extraction | Indexation Informix / HFSQL | `RegexExtractor` (numéro, date, client, montant, conteneur ISO 6346) | Localisateurs de champs, normalisation |
-| Validation | Contrôle opérateur | `BusinessValidator` → statut `EnException` | File de validation humaine |
-| Dépôt GED | Bibliothèque C# → Alfresco (REST + CMIS) | `AlfrescoClient` .NET 8 sans dépendance | Ticket, multipart, aspects, versions, recherche |
-| Environnements | Serveurs test et prod séparés | `appsettings.{Development,Production}.json` + variables | Déploiement sans secret dans le code |
-| Tests | Postman | Postman + banc d'essai `SelfTest` (36 vérifications) | Tests reproductibles, faux serveur |
+| Étape | Ce que fait CaptureLab |
+|---|---|
+| Entrée | Lecture d'un dossier de documents numérisés (TIFF, PNG, JPG ; PDF prévu) |
+| OCR | Tesseract (français et anglais), derrière une interface `IOcrEngine` remplaçable |
+| Classification | Facture, connaissement, bon de livraison — score par mots-clés et seuil de confiance |
+| Extraction | Numéro, date (convertie au format ISO), client, montant total, numéro de conteneur ISO 6346 |
+| Validation | Règles métier ; un document non conforme part en file d'exceptions au lieu d'être archivé |
+| Dépôt GED | API REST v1 d'Alfresco : authentification par ticket, dépôt multipart avec métadonnées, classement automatique `Type/Année/Mois`, étiquettes, aspect personnalisé, gestion des doublons |
+| Recherche | Requêtes AFTS et CMIS-SQL (CMIS 1.1 Browser binding) |
+| Robustesse | Reprise automatique sur erreurs transitoires (502, 503, 504, 429), journal par document, rapport CSV |
+| Environnements | Configuration séparée test / production ; aucun mot de passe enregistré |
 
 ### Architecture
 
 ```
- Fichiers numérisés ──► [IOcrEngine] ──► [KeywordClassifier] ──► [RegexExtractor] ──► [BusinessValidator]
-  (png, tif, jpg, txt)     Tesseract        type + confiance        champs              │
-                                                                                         ├─ invalide ─► _exceptions/  (validation humaine)
+ Documents numérisés ──► [IOcrEngine] ──► [KeywordClassifier] ──► [RegexExtractor] ──► [BusinessValidator]
+  (tif, png, jpg)          Tesseract        type + confiance        champs              │
+                                                                                         ├─ invalide ─► file d'exceptions
                                                                                          └─ valide ───► [AlfrescoExporter]
                                                                                                           │ REST v1 : ticket, multipart,
-                                                                                                          │ aspect cap:documentCapture, tags
+                                                                                                          │ aspect, étiquettes
                                                                                                           ▼
-                                                                    Alfresco : Dossiers partagés/Capture/{Type}/{Année}/{Mois}/
+                                                                         Alfresco : Fichiers partagés/Capture/{Type}/{Année}/{Mois}/
 ```
 
-### Structure de la solution
+---
+
+## Structure de la solution
 
 | Projet | Rôle |
 |---|---|
+| `CaptureLab.Desktop` | Application Windows (WinForms) : connexion, liste des documents, aperçu, champs extraits, validation |
 | `src/CaptureLab.Core` | Modèle, OCR, classification, extraction, validation, orchestration (`CapturePipeline`) |
-| `src/CaptureLab.Alfresco` | Client REST v1 + CMIS Browser binding, reprise sur erreurs (`RetryHandler`), export |
-| `src/CaptureLab.Cli` | Console `capturelab` : `ping`, `run`, `watch`, `search`, `cmis` |
-| `tests/CaptureLab.SelfTest` | Banc d'essai avec faux serveur Alfresco en mémoire |
-| `postman/` | Collection Postman (16 requêtes) |
-| `samples/` | Facture, connaissement, bon de livraison, cas d'exception, scans PNG |
+| `src/CaptureLab.Alfresco` | Client REST v1 + CMIS, reprise sur erreurs (`RetryHandler`), export vers Alfresco |
+| `src/CaptureLab.Cli` | Version console (`ping`, `run`, `watch`, `search`, `cmis`), utile pour l'automatisation |
+| `tests/CaptureLab.SelfTest` | Banc d'essai avec un faux serveur Alfresco en mémoire (36 vérifications) |
+| `postman/` | Collection Postman de l'API Alfresco (16 requêtes) |
+| `samples/` | Factures, connaissement et bon de livraison fictifs, cas d'exception |
+
+Les bibliothèques `Core` et `Alfresco` n'utilisent aucun paquet NuGet : uniquement `HttpClient` et `System.Text.Json`.
 
 ---
 
-## 2. Prérequis (Windows)
+## Prérequis
 
-| Outil | Pourquoi | Vérification |
-|---|---|---|
-| Docker Desktop (moteur WSL 2) | Faire tourner Alfresco | `docker version` |
-| **RAM : au moins 16 Go alloués à Docker** | La documentation officielle demande environ 13 Go libres | Docker Desktop → Settings → Resources |
-| Git | Récupérer le déploiement officiel | `git --version` |
-| SDK .NET 8 | Compiler CaptureLab | `dotnet --version` |
-| Tesseract OCR + langue française | OCR des scans | `tesseract --list-langs` doit afficher `fra` |
-| Postman | Tester l'API à la main | — |
-
-> ⚠ **À vérifier sur ton poste** : si ton PC a 16 Go de RAM au total, Alfresco va être serré (conteneurs qui s'arrêtent sans message). Ferme les autres applications, ou loue une VM temporaire (Azure/AWS, 16 Go) le temps des révisions.
+| Outil | Rôle |
+|---|---|
+| Windows 10 ou 11 | Application WinForms |
+| SDK .NET 8 ou plus récent | Compilation (testé avec .NET 10) |
+| Visual Studio 2022 ou plus récent, charge « Développement .NET Desktop » | Développement |
+| Tesseract OCR + pack de langue `fra` | OCR des documents numérisés |
+| Alfresco Community | GED cible (testé sur 5.2 ; compatible avec les versions récentes en Docker) |
+| Postman (facultatif) | Tests manuels de l'API |
 
 ---
 
-## 3. Installer Alfresco Community avec Docker
+## Installer Alfresco Community
 
-On utilise le **déploiement officiel** d'Alfresco plutôt qu'un fichier maison : c'est ce qu'un intégrateur ferait chez un client, et les versions des images restent cohérentes entre elles.
+### Option A — versions récentes, avec Docker (16 Go de RAM recommandés)
 
 ```powershell
 git clone https://github.com/Alfresco/acs-deployment.git
 cd acs-deployment\docker-compose
-docker compose -f community-compose.yaml up -d     # 1re fois : téléchargement long des images
-docker compose -f community-compose.yaml ps        # tous les services doivent être "running"
-docker compose -f community-compose.yaml logs -f alfresco   # attendre la fin du démarrage du dépôt
+docker compose -f community-compose.yaml up -d
 ```
 
-### Services démarrés (à savoir expliquer)
+### Option B — poste léger (8 Go de RAM)
 
-| Service | Rôle |
+L'installateur Windows d'Alfresco Community 5.2 fonctionne avec environ 4 Go de RAM disponibles. Il installe le dépôt, Share, PostgreSQL et Solr. À réserver à un environnement local de test : cette version n'est plus maintenue.
+
+### Après l'installation
+
+1. Changer le mot de passe administrateur.
+2. Créer un compte de service dédié à la capture (ex. `capture`), avec les droits *Collaborateur* sur `Fichiers partagés/Capture-TEST` et `Capture`.
+3. Vérifier l'API REST dans un navigateur :
+   `http://localhost:8080/alfresco/api/-default-/public/alfresco/versions/1/nodes/-root-`
+
+### Modèle de contenu personnalisé (facultatif)
+
+Dans Share → Outils d'administration → Gestionnaire de modèles, créer le modèle `cap` avec l'aspect `cap:documentCapture` :
+
+| Propriété | Type |
 |---|---|
-| `alfresco` | Dépôt de contenu (Content Repository) : API REST, CMIS, règles, workflows |
-| `postgres` | Base de données des métadonnées |
-| `solr6` (Search Services) | Index plein texte → recherche AFTS et CMIS |
-| `transform-core-aio` | Transformations : vignettes, aperçus, extraction de texte des PDF |
-| `activemq` | Messagerie entre le dépôt et les transformations |
-| `share` / `content-app` | Interfaces web utilisateurs |
-| `proxy` | Point d'entrée unique sur le port 8080 |
+| `cap:typeDocument` | d:text |
+| `cap:numero` | d:text |
+| `cap:dateDocument` | d:date |
+| `cap:client` | d:text |
+| `cap:montant` | d:double |
+| `cap:sha256` | d:text |
 
-### Adresses locales
-
-| Interface | Adresse |
-|---|---|
-| Dépôt + administration | `http://localhost:8080/alfresco` |
-| Share | `http://localhost:8080/share` |
-| Content App | voir le README du dépôt officiel (l'URL a changé selon les versions) |
-
-### Sécuriser dès le premier lancement
-
-1. Se connecter à Share avec le compte administrateur par défaut indiqué dans la documentation Alfresco.
-2. **Changer immédiatement son mot de passe** (Mon profil → Modifier le mot de passe).
-3. Créer un **compte de service** dédié, par exemple `capture` (Outils d'administration → Utilisateurs), et lui donner les droits *Collaborateur* sur `Dossiers partagés/Capture-TEST` et `Capture`.
-4. C'est ce compte — jamais l'admin — que CaptureLab et Postman utilisent.
+Puis renseigner `"CustomAspect": "cap:documentCapture"` dans la configuration.
 
 ---
 
-## 4. Créer le modèle de contenu `cap` (Model Manager)
+## Utilisation
 
-Share → Outils d'administration → **Gestionnaire de modèles** → Créer un modèle :
+### Application Windows
 
-| Champ | Valeur |
-|---|---|
-| Espace de noms | `http://www.exemple.local/model/capture/1.0` |
-| Préfixe | `cap` |
-| Nom | `capture` |
+1. Ouvrir `CaptureLab.sln` dans Visual Studio et définir `CaptureLab.Desktop` comme projet de démarrage.
+2. Lancer (F5), saisir le serveur, l'utilisateur et le mot de passe, puis **Tester la connexion**.
+3. Choisir le dossier d'entrée (ex. `C:\CaptureIn`) : les documents s'affichent à gauche.
+4. Sélectionner un document, **Traiter**, contrôler les champs, puis **Valider et déposer** ou **Envoyer en exception**.
 
-Puis **Créer un aspect** `documentCapture` avec ces propriétés :
-
-| Propriété | Type | Obligatoire | Indexation |
-|---|---|---|---|
-| `typeDocument` | d:text | oui | recherche exacte (liste : Facture, Connaissement, BonLivraison) |
-| `numero` | d:text | oui | recherche exacte |
-| `dateDocument` | d:date | oui | plage |
-| `client` | d:text | non | plein texte |
-| `montant` | d:double | non | plage |
-| `sha256` | d:text | non | recherche exacte |
-
-Enfin **Activer** le modèle. Ensuite, dans `appsettings.json` (ou `appsettings.Development.json`), mettre `"CustomAspect": "cap:documentCapture"`.
-
-> **Aspect ou type ?** Un *type* est fixé à la création (`cm:content` → `cap:facture`). Un *aspect* s'ajoute et se retire à tout moment sur n'importe quel nœud. Pour de la capture, l'aspect est plus souple : un même document peut recevoir ses métadonnées après coup, sans migration.
-
----
-
-## 5. Tester l'API avec Postman
-
-1. Importer `postman/AlfrescoLab.postman_collection.json`.
-2. Onglet **Variables** : renseigner `username` et `password` dans **Current value** seulement (jamais dans *Initial value*, qui est partagée).
-3. Exécuter dans l'ordre : `01 Ticket` → `02 Découverte` → `03 Dossier` → `04 Lire` → `05 Dépôt` (choisir un fichier) → `06`… `16`.
-
----
-
-## 6. Lancer CaptureLab
-
-### Compiler et vérifier sans serveur
+### Tests sans serveur
 
 ```powershell
-cd AlfrescoLab
-dotnet build
-dotnet run --project tests\CaptureLab.SelfTest          # doit finir par "36 réussi(s), 0 échec(s)"
-dotnet run --project src\CaptureLab.Cli -- run samples --offline   # OCR + extraction, sans Alfresco
+dotnet run --project tests\CaptureLab.SelfTest
 ```
 
-### Contre Alfresco (serveur de TEST)
+### Version console
 
 ```powershell
-$env:CAPTURELAB_ENVIRONMENT = "Development"
 $env:ALFRESCO_USERNAME = "capture"
-$sec = Read-Host "Mot de passe Alfresco" -AsSecureString
-$env:ALFRESCO_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
-
-dotnet run --project src\CaptureLab.Cli -- ping
-# copier les échantillons dans un dossier de travail : run déplace les fichiers traités
-mkdir C:\CaptureIn; copy samples\* C:\CaptureIn
+$env:ALFRESCO_PASSWORD = "<mot de passe>"
 dotnet run --project src\CaptureLab.Cli -- run C:\CaptureIn
 dotnet run --project src\CaptureLab.Cli -- search "TAG:\"facture\""
-dotnet run --project src\CaptureLab.Cli -- cmis "SELECT cmis:name FROM cmis:document WHERE cmis:name LIKE 'Facture%'"
-dotnet run --project src\CaptureLab.Cli -- watch C:\CaptureIn    # déposer un fichier : il est traité aussitôt
 ```
 
-Résultat attendu de `run` :
+### Postman
 
-| Fichier | Statut | Où il va |
-|---|---|---|
-| `facture_transmontreal.*` | Depose | `Capture-TEST/Facture/2026/10/Facture_FAC-2026147.*` |
-| `connaissement_matadi.*` | Depose | `Capture-TEST/Connaissement/2026/10/…` |
-| `bon_livraison_laval.*` | Depose | `Capture-TEST/BonLivraison/2026/10/…` |
-| `facture_incomplete.txt` | EnException | `C:\CaptureIn\_exceptions\` (numéro, date, montant manquants) |
-| `note_illisible.txt` | EnException | `C:\CaptureIn\_exceptions\` (type non reconnu) |
-| Relancer le même lot | Depose (doublon détecté) | Aucun nouveau fichier dans Alfresco (409 géré) |
-
-Un rapport CSV (ouvrable dans Excel) est écrit dans `_rapports\`.
-
-### Passer en PRODUCTION
-
-```powershell
-$env:CAPTURELAB_ENVIRONMENT = "Production"
-$env:ALFRESCO_BASEURL = "<adresse du serveur de prod>"   # jamais écrite dans le dépôt
-```
-`appsettings.Production.json` active l'aspect personnalisé, monte le seuil de classification à 70 % et le nombre de reprises à 5.
+Importer `postman/AlfrescoLab.postman_collection.json`, renseigner `username` et `password` dans **Current value** uniquement, puis exécuter les requêtes dans l'ordre.
 
 ---
 
-## 7. Dépannage (soutien niveau 2/3)
+## Configuration
+
+| Fichier | Rôle |
+|---|---|
+| `appsettings.json` | Valeurs communes |
+| `appsettings.Development.json` | Serveur de test, dossier `Capture-TEST` |
+| `appsettings.Production.json` | Serveur de production, aspect personnalisé, seuil de confiance plus strict |
+
+Les identifiants ne sont jamais écrits dans ces fichiers : variables d'environnement `ALFRESCO_USERNAME`, `ALFRESCO_PASSWORD`, `ALFRESCO_BASEURL` (console), ou saisie dans la fenêtre (application Windows).
+
+---
+
+## Dépannage
 
 | Symptôme | Cause probable | Correctif |
 |---|---|---|
-| Conteneurs qui s'arrêtent sans erreur | Mémoire insuffisante | Allouer 16 Go à Docker, `docker stats` |
-| `ping` → 502/503 pendant 2–3 min | Le dépôt démarre encore | Attendre ; CaptureLab rejoue automatiquement (1 s, 2 s, 4 s) |
-| 401 Unauthorized | Ticket expiré ou mauvais en-tête | Refaire le ticket ; l'en-tête est `Basic base64(ticket)` |
-| 403 Forbidden | Mauvais mot de passe, ou pas de droits sur le dossier | Vérifier le compte et les permissions du dossier |
-| 404 sur `relativePath` | Chemin ou alias faux (`-shared-`, `-my-`, `-root-`) | Tester l'étape 04 dans Postman |
-| 409 Conflict | Nom déjà présent dans le dossier | Normal : traité comme doublon (ou `autoRename=true`) |
-| 400 sur l'aspect `cap:…` | Modèle non activé, ou préfixe faux | Model Manager → modèle **Actif** |
-| Recherche vide juste après dépôt | Indexation Solr asynchrone | Attendre quelques secondes ; vérifier `solr6` |
-| CMIS `cap:…` inconnu | Propriété d'aspect interrogée sans JOIN | Utiliser `JOIN cap:documentCapture` (requête 13) |
-| `Impossible de lancer 'tesseract'` | Pas dans le PATH | Mettre le chemin complet de `tesseract.exe` dans `appsettings.json` |
-| Accents mal lus | Langue `fra` absente | Réinstaller Tesseract avec le pack français |
-
-Le journal de chaque document (`doc.Log`) indique l'étape exacte où il s'est arrêté : c'est la première chose à regarder en soutien.
+| 401 Unauthorized | Ticket expiré ou en-tête incorrect | Refaire le ticket ; en-tête `Authorization: Basic base64(ticket)` |
+| 403 Forbidden | Mot de passe incorrect ou droits insuffisants | Vérifier le compte et les permissions du dossier |
+| 404 sur `relativePath` | Chemin ou alias erroné (`-shared-`, `-my-`, `-root-`) | Tester l'appel dans Postman |
+| 409 Conflict | Nom déjà présent dans le dossier | Traité comme doublon par CaptureLab |
+| 400 sur `cap:…` | Modèle de contenu non activé | Gestionnaire de modèles → modèle **Actif** |
+| Recherche vide juste après un dépôt | Indexation Solr asynchrone | Attendre quelques secondes |
+| `Impossible de lancer 'tesseract'` | Tesseract absent du PATH | Indiquer le chemin complet dans `appsettings.json` |
+| Accents mal lus | Pack de langue `fra` absent | Réinstaller Tesseract avec le français |
 
 ---
 
-## 8. Questions probables du test — réponses courtes
+## Feuille de route
 
-| Question | Réponse à donner |
-|---|---|
-| REST v1 ou CMIS : lequel utiliser ? | REST v1 pour tout ce qui est spécifique à Alfresco (tickets, tags, versions, aspects, recherche AFTS). CMIS quand on veut un code portable entre GED compatibles (standard OASIS) ou des requêtes de type SQL. Mon client utilise les deux. |
-| Comment s'authentifier ? | `POST /tickets` puis `Authorization: Basic base64(ticket)`. Le mot de passe ne circule qu'une fois ; ticket révoqué en fin de traitement (`DELETE /tickets/-me-`). |
-| Comment déposer un document avec ses métadonnées ? | `POST /nodes/{parent}/children` en multipart : `filedata`, `name`, `nodeType`, `relativePath` (crée les dossiers), propriétés comme champs du formulaire. |
-| Ajouter des métadonnées métier ? | Modèle de contenu personnalisé (aspect), puis `PUT /nodes/{id}` avec `aspectNames` **complet** (il remplace la liste) et `properties`. |
-| Gérer les versions ? | `PUT /nodes/{id}/content?majorVersion=…` ; historique avec `GET /nodes/{id}/versions`. Le nodeId ne change pas. |
-| Éviter les doublons si on rejoue un lot ? | Nom déterministe (`Type_Numéro`), `autoRename=false`, 409 → on récupère le nœud existant. Empreinte SHA-256 stockée pour prouver l'intégrité. |
-| Que faire si Alfresco est indisponible ? | Reprise exponentielle uniquement sur 408/429/502/503/504 et coupures réseau ; jamais sur 400/401/403/404/409. Le document reste dans le dossier d'entrée et part en `_erreurs` s'il échoue définitivement. |
-| AFTS vs CMIS-SQL ? | AFTS : syntaxe Alfresco, `TAG:`, `PATH:`, `=cap:numero:"…"`, plein texte riche. CMIS-SQL : standard, `SELECT … FROM cmis:document JOIN cap:documentCapture`. Les deux passent par l'index Solr. |
-| Séparer test et production ? | Fichiers `appsettings.{Environnement}.json`, secrets en variables d'environnement (ou coffre type Azure Key Vault), dossiers racines distincts, compte de service par environnement. |
-| Pourquoi un seuil de confiance ? | Mieux vaut envoyer en validation humaine que d'archiver une donnée fausse dans la GED du client. |
-
-### Faire le lien avec TotalAgility (à réviser — je ne l'ai pas encore utilisé)
-
-| Concept de ce labo | Équivalent probable dans Tungsten TotalAgility | À confirmer |
-|---|---|---|
-| Dossier surveillé / lot | Import source, création de lot (Capture) | oui |
-| `KeywordClassifier` + seuil | Classification (projet de classification, apprentissage sur échantillons) | oui |
-| `RegexExtractor` | Extraction (localisateurs de format, zones, groupes de champs) | oui |
-| `BusinessValidator` + `_exceptions` | Activité de validation humaine (Validation / Verification) | oui |
-| `AlfrescoExporter` | Activité d'export / connecteur vers la GED (OnBase, SharePoint…) | oui |
-| Code C# sur mesure | Activités de script .NET et appels REST/SOAP dans un processus BPM | oui |
-| `doc.Log` + statuts | Suivi des tâches et des lots dans la console de travail | oui |
-
-### Présentation orale (1 minute)
-
-> « En 2023, un client du secteur du transport voulait une solution de capture, mais la licence Ephesoft était trop chère pour lui. J'ai conçu une chaîne sur mesure : numérisation et OCR, indexation des métadonnées, puis dépôt dans Alfresco Community par une bibliothèque C# qui utilisait l'API REST et CMIS, avec des serveurs de test et de production séparés et des tests Postman. Pour préparer ce poste, je l'ai réécrite entièrement en .NET 8 : classification avec seuil de confiance, extraction et validation métier, file d'exceptions, reprise automatique et détection des doublons. Ce sont les mêmes étapes qu'on retrouve dans TotalAgility, que je suis en train d'apprendre. »
+- [x] Bibliothèques de capture et client Alfresco
+- [x] Banc d'essai avec faux serveur
+- [x] Fenêtre WinForms : connexion, liste, aperçu, champs extraits
+- [ ] Boutons Traiter / Valider et déposer / Envoyer en exception, journal
+- [ ] Lecture des PDF (texte natif et PDF numérisés)
+- [ ] Extraction des numéros TPS/TVQ, du fournisseur et des modalités de paiement
+- [ ] Contrôle des taxes (TPS 5 %, TVQ 9,975 %) et du total
+- [ ] Déclaration automatique comme archive (module Records Management)
 
 ---
 
-## 9. Exercices pour aller plus loin
+## Licence
 
-1. Ajouter l'OCR des PDF : convertir chaque page en image (ex. Ghostscript) avant `IOcrEngine`.
-2. Remplacer Tesseract par Azure AI Document Intelligence en implémentant `IOcrEngine` (une seule classe à écrire).
-3. Créer une **règle de dossier** Alfresco sur `Capture/Facture` qui déclenche une action (copie, notification).
-4. Écrire une requête AFTS par chemin : `PATH:"/app:company_home/app:shared/cm:Capture//*" AND =cap:typeDocument:"Facture"`.
-5. Écrire les métadonnées extraites aussi dans une table SQL Server (intégration ERP).
+Projet personnel d'apprentissage. Données d'exemple fictives.
